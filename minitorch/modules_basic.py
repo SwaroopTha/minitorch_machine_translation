@@ -6,7 +6,7 @@ Embedding
 
 """
 import numpy as np
-
+import minitorch
 from .module import Module, Parameter
 from .tensor_functions import (zeros, ones, rand, tensor, tensor_from_numpy, zeros_tensor_from_numpy, ones_tensor_from_numpy)
 from .nn import one_hot
@@ -15,6 +15,20 @@ from .tensor import Tensor
 
 from typing import Any, Dict, Optional, Sequence, Tuple
 
+backend_name = "TensorBackend"
+
+if backend_name == "TensorBackend":
+    from minitorch.cuda_kernel_ops import CudaKernelOps
+    BACKEND = minitorch.TensorBackend(CudaKernelOps)
+
+
+def RParam(*shape, backend: TensorBackend):
+    r = tensor_from_numpy(np.random.uniform(-1/np.sqrt(shape[0]), 1/np.sqrt(shape[0]), shape), backend=backend)
+    return Parameter(r)
+
+def EmbeddingInit(*shape, backend: TensorBackend):
+    r = tensor_from_numpy(np.random.standard_normal(shape), backend=backend)
+    return Parameter(r)
 
 class Embedding(Module):
     def __init__(self, num_embeddings: int, embedding_dim: int, backend: TensorBackend):
@@ -33,7 +47,8 @@ class Embedding(Module):
         self.num_embeddings = num_embeddings # Vocab size
         self.embedding_dim  = embedding_dim  # Embedding Dimension
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError
+        self.weights = EmbeddingInit(self.num_embeddings, self.embedding_dim, backend=backend)
+
         ### END YOUR SOLUTION
     
     def forward(self, x: Tensor):
@@ -47,7 +62,17 @@ class Embedding(Module):
         """
         bs, seq_len = x.shape
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError
+        x = one_hot(x, self.num_embeddings)
+
+        # reshape for matrix multiplication
+        x = x.view(bs * seq_len, self.num_embeddings)
+
+        x = x @ self.weights.value
+
+        x = x.view(bs, seq_len, self.embedding_dim)
+        
+        return x
+
         ### END YOUR SOLUTION
 
     
@@ -71,7 +96,18 @@ class Dropout(Module):
             output : Tensor of shape (*)
         """
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError
+        
+        # check if self.training is True
+        if self.training:
+            # use np.random.binomial to generate a mask
+            mask = tensor_from_numpy(np.random.binomial(1, 1 - self.p_dropout, x.shape), backend=x.backend)
+
+            # apply the mask to x
+            x = x * mask * (1.0 / (1.0 - self.p_dropout))
+
+        
+        return x
+
         ### END YOUR SOLUTION
 
 
@@ -91,7 +127,12 @@ class Linear(Module):
         """
         self.out_size = out_size
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError
+        self.weights = RParam(in_size, out_size, backend=backend)
+        if bias:
+            self.bias = RParam(out_size, backend=backend)
+        else:
+            self.bias = None
+
         ### END YOUR SOLUTION
 
     def forward(self, x: Tensor):
@@ -105,7 +146,13 @@ class Linear(Module):
         """
         batch, in_size = x.shape
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError
+        weights = self.weights.value.view(in_size, self.out_size)
+        out = x @ weights
+        if self.bias is not None:
+            out += self.bias.value.view(1, self.out_size)
+        
+        return out
+
         ### END YOUR SOLUTION
 
 
@@ -125,7 +172,9 @@ class LayerNorm1d(Module):
         self.dim = dim
         self.eps = eps
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError
+        self.weights = Parameter(ones((self.dim,), backend=backend))
+        self.bias = Parameter(zeros((self.dim,), backend=backend))
+
         ### END YOUR SOLUTION
 
     def forward(self, x: Tensor) -> Tensor:
@@ -141,5 +190,12 @@ class LayerNorm1d(Module):
         """
         batch, dim = x.shape
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError
+        mean = x.mean(dim=1)
+        variance = x.var(dim=1)
+
+        x_normalized = (x - mean.view(-1, 1)) / (variance.view(-1, 1) + self.eps).sqrt()
+
+        return x_normalized * self.weights.value.view(1, -1) + self.bias.value.view(1, -1)
+
+
         ### END YOUR SOLUTION
