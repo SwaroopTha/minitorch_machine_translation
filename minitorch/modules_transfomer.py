@@ -71,9 +71,9 @@ class MultiHeadAttention(Module):
         batch_size, seq_len, n_embd = x.shape
         ### BEGIN YOUR SOLUTION
         x = x.view(batch_size * seq_len, n_embd) # [batch_size * seq_len, n_embd]
-        q = self.q_projection(x).view(batch_size, seq_len, self.n_head, self.attn_hidden_dim).transpose(1, 2) # [batch_size, num_heads, seq_len, attn_hidden_dim]
-        kT = self.k_projection(x).view(batch_size, seq_len, self.n_head, self.attn_hidden_dim).permute(0, 2, 3, 1) # [batch_size, num_heads, attn_hidden_dim, seq_len]
-        v = self.v_projection(x).view(batch_size, seq_len, self.n_head, self.attn_hidden_dim).transpose(1, 2) # [batch_size, num_heads, seq_len, attn_hidden_dim]
+        q = self.q_projection(x).view(batch_size, seq_len, self.n_head, self.attn_hidden_dim).permute(0, 2, 1, 3)
+        kT = self.k_projection(x).view(batch_size, seq_len, self.n_head, self.attn_hidden_dim).permute(0, 2, 3, 1)
+        v = self.v_projection(x).view(batch_size, seq_len, self.n_head, self.attn_hidden_dim).permute(0, 2, 1, 3)
 
         ### END YOUR SOLUTION
         return q, kT, v
@@ -104,12 +104,12 @@ class MultiHeadAttention(Module):
         M = self.create_causal_mask(queries_len) if self.causal else None
 
         # Compute the attention scores
-        scores = (q @ kT) / np.sqrt(self.attn_hidden_dim) # [batch_size, num_heads, seq_len, seq_len]
+        scores = (q @ kT) / q_dim ** 0.5
         if M is not None:
             scores += M
         
         # Apply softmax
-        attn_score = softmax(scores, dim=3)
+        attn_score = softmax(scores, dim=-1)
         result = attn_score @ v 
 
         ### END YOUR SOLUTION
@@ -129,14 +129,10 @@ class MultiHeadAttention(Module):
         ### BEGIN YOUR SOLUTION
         q, kT, v = self.project_to_query_key_value(x)
         x = self.self_attention(q, kT, v)
-
-        x = x.view(batch_size, self.n_head, seq_len, self.attn_hidden_dim)
-        x = x.transpose(1, 2) # [batch_size, seq_len, n_heads, attn_hidden_dim]
-        x = x.view(batch_size, seq_len, n_embd)
-
-        x = self.out_projection(x).view(batch_size, seq_len, n_embd)
-
-        return x
+        output = output.view(batch_size, self.n_head, seq_len, self.attn_hidden_dim)
+        output = output.permute(0, 2, 1, 3).contiguous().view(batch_size * seq_len, n_embd) #
+        output = self.out_projection(output)
+        return output.view(batch_size, seq_len, n_embd)
 
         ### END YOUR SOLUTION
 

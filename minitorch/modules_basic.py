@@ -96,17 +96,16 @@ class Dropout(Module):
             output : Tensor of shape (*)
         """
         ### BEGIN YOUR SOLUTION
+        if not self.training or self.p_dropout == 0:
+            return x 
         
-        # check if self.training is True
-        if self.training:
-            # use np.random.binomial to generate a mask
-            mask = tensor_from_numpy(np.random.binomial(1, 1 - self.p_dropout, x.shape), backend=x.backend)
-
-            # apply the mask to x
-            x = x * mask * (1.0 / (1.0 - self.p_dropout))
-
+        # Generate dropout mask with the correct shape
+        mask = tensor_from_numpy(
+            np.random.binomial(1, 1 - self.p_dropout, size=x.shape),
+            backend=x.backend
+        )
         
-        return x
+        return x * mask / (1.0 - self.p_dropout)
 
         ### END YOUR SOLUTION
 
@@ -191,11 +190,10 @@ class LayerNorm1d(Module):
         batch, dim = x.shape
         ### BEGIN YOUR SOLUTION
         mean = x.mean(dim=1)
-        variance = x.var(dim=1)
+        var = x.var(dim=1)
 
-        x_normalized = (x - mean.view(-1, 1)) / (variance.view(-1, 1) + self.eps).sqrt()
+        z = (x - mean) / (var + self.eps).sqrt()
 
-        return x_normalized * self.weights.value.view(1, -1) + self.bias.value.view(1, -1)
-
+        return self.weights.value * z + self.bias.value
 
         ### END YOUR SOLUTION
