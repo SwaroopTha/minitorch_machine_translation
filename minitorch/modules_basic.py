@@ -192,7 +192,7 @@ class LayerNorm1d(Module):
         mean = x.mean(dim=1)
         var = x.var(dim=1)
 
-        z = (x - mean) / (var + self.eps).sqrt()
+        z = (x - mean) / (var + self.eps) ** 0.5
 
         return self.weights.value * z + self.bias.value
 

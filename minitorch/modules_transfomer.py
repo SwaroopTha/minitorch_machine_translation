@@ -70,6 +70,8 @@ class MultiHeadAttention(Module):
         """
         batch_size, seq_len, n_embd = x.shape
         ### BEGIN YOUR SOLUTION
+
+
         x = x.view(batch_size * seq_len, n_embd) # [batch_size * seq_len, n_embd]
         q = self.q_projection(x).view(batch_size, seq_len, self.n_head, self.attn_hidden_dim).permute(0, 2, 1, 3)
         kT = self.k_projection(x).view(batch_size, seq_len, self.n_head, self.attn_hidden_dim).permute(0, 2, 3, 1)
@@ -102,16 +104,13 @@ class MultiHeadAttention(Module):
         ### BEGIN YOUR SOLUTION
         # raise NotImplementedError
         M = self.create_causal_mask(queries_len) if self.causal else None
-
-        # Compute the attention scores
-        scores = (q @ kT) / q_dim ** 0.5
+        attn_scores = (q @ kT) / (q_dim ** 0.5)
         if M is not None:
-            scores += M
-        
-        # Apply softmax
-        attn_score = softmax(scores, dim=-1)
-        result = attn_score @ v 
-
+            attn_scores += M
+    
+        attn_weights = softmax(attn_scores, dim=3)
+        output = attn_weights @ v
+        result = output.permute(0, 2, 1, 3).contiguous().view(batch_size, queries_len, num_head * q_dim)
         ### END YOUR SOLUTION
 
         return result
@@ -128,13 +127,14 @@ class MultiHeadAttention(Module):
         batch_size, seq_len, n_embd = x.shape
         ### BEGIN YOUR SOLUTION
         q, kT, v = self.project_to_query_key_value(x)
-        x = self.self_attention(q, kT, v)
-        output = output.view(batch_size, self.n_head, seq_len, self.attn_hidden_dim)
-        output = output.permute(0, 2, 1, 3).contiguous().view(batch_size * seq_len, n_embd) #
-        output = self.out_projection(output)
-        return output.view(batch_size, seq_len, n_embd)
+        attn_weights = self.self_attention(q, kT, v)
+
+        output = attn_weights.view(batch_size * seq_len, self.n_embd)
+        output = self.out_projection(output).view(batch_size, seq_len, self.n_embd)
 
         ### END YOUR SOLUTION
+
+        return output
 
 
 class FeedForward(Module):
@@ -201,6 +201,7 @@ class TransformerLayer(Module):
         self.ln_2 = LayerNorm1d(n_embd, ln_eps, backend=backend)
         self.attention = MultiHeadAttention(n_embd, n_head, causal=True, p_dropout=p_dropout, bias=bias, backend=backend)
         self.ff = FeedForward(n_embd, p_dropout=p_dropout, bias=bias, backend=backend)
+        self.dropout = Dropout(p_dropout)
         ### END YOUR SOLUTION
 
     def forward(self, x):
@@ -215,16 +216,24 @@ class TransformerLayer(Module):
         batch_size, seq_len, n_embd = x.shape # (batch_size, seq_len, n_embd)
         ### BEGIN YOUR SOLUTION
         # raise NotImplementedError
+        residual = x
+
+        # LayerNorm
         x = x.view(batch_size * seq_len, n_embd) # because LayerNorm1d expects (batch_size * seq_len, n_embd)
         x = self.ln_1(x)
         x = x.view(batch_size, seq_len, n_embd) # back to (batch_size, seq_len, n_embd)
 
-        attn_out = self.attention(x) + x # Residual connection
-        x = attn_out.view(batch_size * seq_len, n_embd) # because LayerNorm1d expects (batch_size * seq_len, n_embd)
-        x = self.ln_2(x)
-        x = x.view(batch_size, seq_len, n_embd) # back to (batch_size, seq_len, n_embd)
+        # Attention
+        attn_out = self.attention(x) + residual # Residual connection
+        residual = attn_out
 
-        ff_out = self.ff(x) + x # Residual connection
+        # layer norm
+        x = attn_out.view(batch_size * seq_len, n_embd)
+        x = self.ln_2(x)
+        x = x.view(batch_size, seq_len, n_embd)
+
+        # Feed Forward
+        ff_out = self.ff(x) + residual # Residual connection
 
         return ff_out
         ### END YOUR SOLUTION
@@ -301,8 +310,8 @@ class DecoderLM(Module):
          - Pass the position ids through your positional embedding layer
          - Ensure shape is (1, seq_len, n_embd)
         """
-        pos_ids = tensor(np.arange(seq_len), backend=self.backend).view(1, seq_len)
-        pos = self.position_embeddings(pos_ids).view(1, seq_len, self.n_embd)
+        pos_ids = tensor_from_numpy(np.arange(seq_len), backend=self.backend).view(1, seq_len)
+        pos = self.position_embeddings(pos_ids)
 
         # add the embeddings and pass through dropout; Jurafsky and Martin, 10.1.3
         x = self.dropout(x + pos)
@@ -316,8 +325,10 @@ class DecoderLM(Module):
         # Final LayerNorm
         x = x.view(batch_size * seq_len, self.n_embd)
         x = self.ln(x)
+        x = x.view(batch_size, seq_len, self.n_embd)
 
         # Get correct shape
+        x = x.view(batch_size * seq_len, self.n_embd)
         logits = self.lm_head(x)
         logits = logits.view(batch_size, seq_len, self.n_vocab)
         return logits
