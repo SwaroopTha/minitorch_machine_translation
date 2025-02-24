@@ -302,7 +302,7 @@ def generate(model,
             gen_id = 0
 
             # convert token_ids to numpy array
-            np_token_ids = np.array(token_ids).reshape(1, -1)
+            np_token_ids = np.array(token_ids).reshape((1, -1))
             token_ids_tensor = minitorch.tensor_from_numpy(np_token_ids, backend=backend)
             outputs = model(token_ids_tensor)
 
