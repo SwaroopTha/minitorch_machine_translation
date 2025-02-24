@@ -300,11 +300,19 @@ def generate(model,
             # run the model with current token_ids, and predict the next token (gen_id)
             # hint: obtain the logits of next token, and take the argmax.
             gen_id = 0
-            output = model(minitorch.tensor(token_ids, backend=backend)).view(1, len(token_ids)) # (1, len(token_ids))
-            logits = output[:, -1, :] # (1, vocab_size)
-            gen_id = logits.argmax(dim=-1).item()
-            # END ASSIGN2_2
 
+            # convert token_ids to numpy array
+            np_token_ids = np.array(token_ids).reshape(1, -1)
+            token_ids_tensor = minitorch.tensor_from_numpy(np_token_ids, backend=backend)
+            outputs = model(token_ids_tensor)
+
+            # convert outputs to numpy array
+            outputs = outputs.to_numpy()
+
+            # get the gen_id argmax
+            gen_id = np.argmax(outputs[-1][-1])
+
+            # END ASSIGN2_2
             if gen_id == tokenizer.vocab[f'<eos_{tgt_key}>']:
                 break
             else:
