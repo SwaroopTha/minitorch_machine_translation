@@ -13,3 +13,7 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
+### Train & Test
+```
+python project/run_machine_translation.py
+```
